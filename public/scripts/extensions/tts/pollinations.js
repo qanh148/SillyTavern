@@ -14,8 +14,18 @@ export class PollinationsTtsProvider {
         voiceMap: {},
     };
 
+
+
     get settingsHtml() {
-        return '';
+        return `
+        <div id="pollinations-tts-settings">
+            <div>
+                <label for="pollinations-tts-model">Model:</label>
+                <select id="pollinations-tts-model">
+                    <option value="openai-audio">OpenAI Audio</option>
+                </select>
+            </div>
+        </div>`;
     }
 
     onSettingsChange() {
@@ -30,21 +40,68 @@ export class PollinationsTtsProvider {
         }
 
         // Only accept keys defined in defaultSettings
-        this.settings = this.defaultSettings;
+        this.settings = Object.assign({}, this.defaultSettings);
 
         for (const key in settings) {
             if (key in this.settings) {
                 this.settings[key] = settings[key];
             } else {
-                throw `Invalid setting passed to TTS Provider: ${key}`;
+                console.warn(`Invalid setting passed to TTS Provider: ${key}`);
             }
         }
 
         try {
+            await this.populateModels();
+
+            const modelSelect = document.getElementById('pollinations-tts-model');
+            if (modelSelect) {
+                modelSelect.value = this.settings.model;
+                modelSelect.addEventListener('change', () => {
+                    this.settings.model = modelSelect.value;
+                    this.onSettingsChange();
+                });
+            }
+
             await this.checkReady();
             console.debug('Pollinations TTS: Settings loaded');
         } catch {
             console.debug('Pollinations TTS: Settings loaded, but not ready');
+        }
+    }
+
+    async populateModels() {
+        try {
+            const response = await fetch('https://gen.pollinations.ai/audio/models');
+            if (!response.ok) {
+                throw new Error('Failed to fetch Pollinations models');
+            }
+            const models = await response.json();
+
+            const select = document.getElementById('pollinations-tts-model');
+            if (!select) return;
+
+            select.innerHTML = '';
+            models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.name;
+                option.textContent = model.name;
+                select.appendChild(option);
+            });
+
+            // If current model is not in the list, fallback to the first model
+            if (models.length > 0 && !models.find(m => m.name === this.settings.model)) {
+                this.settings.model = models[0].name;
+                if (select) select.value = this.settings.model;
+            }
+        } catch (error) {
+            console.error('Error fetching Pollinations TTS models:', error);
+            const select = document.getElementById('pollinations-tts-model');
+            if (select && select.children.length === 0) {
+                const option = document.createElement('option');
+                option.value = 'openai-audio';
+                option.textContent = 'OpenAI Audio';
+                select.appendChild(option);
+            }
         }
     }
 
@@ -88,17 +145,8 @@ export class PollinationsTtsProvider {
     // API CALLS //
     //###########//
     async fetchTtsVoiceObjects() {
-        const response = await fetch('/api/speech/pollinations/voices', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({ model: this.settings.model }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-        }
-        const responseJson = await response.json();
-        return responseJson
+        var voiceList = ["alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "ballad", "coral", "sage", "verse", "rachel", "domi", "bella", "elli", "charlotte", "dorothy", "sarah", "emily", "lily", "matilda", "adam", "antoni", "arnold", "josh", "sam", "daniel", "charlie", "james", "fin", "callum", "liam", "george", "brian", "bill"]
+        return voiceList
             .sort()
             .map(x => ({ name: x, voice_id: x, preview_url: false, lang: 'en-US' }));
     }
@@ -135,7 +183,7 @@ export class PollinationsTtsProvider {
                 headers: getRequestHeaders(),
                 body: JSON.stringify({
                     model: this.settings.model,
-                    text: 'Say exactly this and nothing else:' + '\n' + chunk,
+                    text: chunk,
                     voice: voiceId,
                 }),
             });
