@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
-import express from 'express';
+import express, { response } from 'express';
 import wavefile from 'wavefile';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
@@ -127,45 +127,32 @@ pollinations.post('/generate', async (req, res) => {
         const voice = req.body.voice || 'alloy';
 
         console.debug('Pollinations TTS request', { text, model, voice });
-
-        const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${key}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: model,
-                stream: false,
-                modalities: ['text', 'audio'],
-                seed: Math.floor(Math.random() * Math.pow(2, 32)),
-                audio: {
-                    format: 'mp3',
-                    voice: voice,
-                },
-                messages: [{
-                    role: 'user',
-                    content: text,
-                }],
-            }),
+        const params = new URLSearchParams({
+            model: model,
+            response_format: 'mp3',
+            voice: voice,
         });
+        console.log(`https://gen.pollinations.ai/audio/${encodeURIComponent(text)}?${params.toString()}`);
+        const response = await fetch(
+            `https://gen.pollinations.ai/audio/${encodeURIComponent(text)}?${params.toString()}`,
+            {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${key}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'audio/mpeg',
+                },
+            }
+        );
 
         if (!response.ok) {
             const text = await response.text();
             throw new Error(`Failed to generate audio from Pollinations: ${text}`);
         }
 
-        /** @type {any} */
-        const data = await response.json();
-        const audioData = data?.choices?.[0]?.message?.audio?.data;
-
-        if (!audioData) {
-            console.warn('Pollinations TTS audio data is missing from the response');
-            return res.sendStatus(500);
-        }
-
-        res.set('Content-Type', 'audio/mpeg');
-        return res.send(Buffer.from(audioData, 'base64'));
+        const buffer = await response.arrayBuffer();
+        res.setHeader('Content-Type', 'audio/mpeg');
+        return res.send(Buffer.from(buffer));
     } catch (error) {
         console.error(error);
         return res.sendStatus(500);
